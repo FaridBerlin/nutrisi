@@ -1,0 +1,58 @@
+package views
+
+// HomePage is the landing page. For now it introduces the AI Coach (built in
+// step 2) and shows one small htmx example.
+templ HomePage() {
+	@Layout("Home") {
+		<section class="hero">
+			<h1>Eat well, with a coach in your pocket.</h1>
+			<p class="lead">
+				NutriSI answers your nutrition questions, plans meals and tracks your progress.
+				We start with the AI Coach.
+			</p>
+		</section>
+		<section class="card">
+			<h2>AI Coach</h2>
+			<p>Ask anything about food, calories or healthy habits. Coming in the next step.</p>
+		</section>
+		<section class="card">
+			<h2>htmx check</h2>
+			<p>
+				This button asks the Go server for a small piece of HTML and swaps it into the box,
+				with no page reload and no JavaScript of our own.
+			</p>
+			<!--
+				hx-get:       which URL to call
+				hx-target:    which element receives the answer
+				hx-swap:      how to insert it (innerHTML = replace the inside)
+				hx-indicator: element shown while the request runs
+			-->
+			<button
+				class="btn"
+				hx-get="/partials/server-time"
+				hx-target="#server-time"
+				hx-swap="innerHTML"
+				hx-indicator="#time-spinner"
+			>
+				Ask the server
+			</button>
+			<span id="time-spinner" class="htmx-indicator">Loading…</span>
+			<div id="server-time" class="result">Nothing loaded yet.</div>
+		</section>
+	}
+}
+
+// ServerTime is an htmx partial: just a fragment, no <html> shell.
+templ ServerTime(now string) {
+	<span>Server time: <strong>{ now }</strong></span>
+}
+
+// NotFoundPage is shown for unknown URLs.
+templ NotFoundPage() {
+	@Layout("Not found") {
+		<section class="card">
+			<h1>Page not found</h1>
+			<p><a href="/">Back to the home page</a></p>
+		</section>
+	}
+}
