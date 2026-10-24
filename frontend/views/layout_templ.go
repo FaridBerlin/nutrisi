@@ -8,6 +8,18 @@ package views
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+// htmxConfig changes which responses htmx swaps into the page. By default htmx
+// ignores 4xx/5xx responses. We want our friendly error boxes from 422
+// (invalid input) and 502/503/504 (model problems) to be shown.
+const htmxConfig = `{"responseHandling":[
+	{"code":"204","swap":false},
+	{"code":"[23]..","swap":true},
+	{"code":"422","swap":true,"error":false},
+	{"code":"50[234]","swap":true,"error":false},
+	{"code":"[45]..","swap":false,"error":true},
+	{"code":"...","swap":false}
+]}`
+
 // Layout is the HTML shell shared by every full page. Pages pass their own
 // content as children: @Layout("Title") { ...page content... }
 func Layout(title string) templ.Component {
@@ -38,13 +50,26 @@ func Layout(title string) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/layout.templ`, Line: 11, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/layout.templ`, Line: 23, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " · NutriSI</title><link rel=\"stylesheet\" href=\"/static/css/app.css\"><!-- htmx is served by our own server, so it also works offline later (PWA). --><script src=\"/static/js/htmx.min.js\" defer></script></head><body><header class=\"topbar\"><a href=\"/\" class=\"brand\">Nutri<span>SI</span></a><nav><a href=\"/\">Home</a></nav></header><main class=\"container\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " · NutriSI</title><meta name=\"htmx-config\" content=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var3 string
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(htmxConfig)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/layout.templ`, Line: 24, Col: 48}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><link rel=\"stylesheet\" href=\"/static/css/app.css\"><!-- htmx is served by our own server, so it also works offline later (PWA). --><script src=\"/static/js/htmx.min.js\" defer></script></head><body><header class=\"topbar\"><a href=\"/\" class=\"brand\">Nutri<span>SI</span></a><nav><a href=\"/\">Home</a> <a href=\"/coach\">AI Coach</a></nav></header><main class=\"container\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -52,7 +77,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</main><footer class=\"footer\">NutriSI is a learning project. It gives general nutrition information, not medical advice.</footer></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</main><footer class=\"footer\">NutriSI is a learning project. It gives general nutrition information, not medical advice.</footer></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

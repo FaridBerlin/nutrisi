@@ -8,12 +8,20 @@ import (
 	"github.com/a-h/templ"
 	"github.com/gin-gonic/gin"
 
+	"github.com/FaridBerlin/nutrisi/backend/internal/coach"
 	"github.com/FaridBerlin/nutrisi/backend/internal/config"
 	"github.com/FaridBerlin/nutrisi/frontend"
 )
 
+// handlers holds what the HTTP handlers need. Handlers are methods on it, so
+// dependencies are passed in once instead of living in global variables.
+type handlers struct {
+	cfg   config.Config
+	coach *coach.Service
+}
+
 // New returns a ready-to-serve Gin engine.
-func New(cfg config.Config) *gin.Engine {
+func New(cfg config.Config, coachSvc *coach.Service) *gin.Engine {
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -36,21 +44,24 @@ func New(cfg config.Config) *gin.Engine {
 	}
 	r.StaticFS("/static", http.FS(static))
 
-	registerRoutes(r)
+	h := &handlers{cfg: cfg, coach: coachSvc}
+	h.registerRoutes(r)
 	return r
 }
 
 // registerRoutes is the one place to see every URL the app answers.
-func registerRoutes(r *gin.Engine) {
-	r.GET("/healthz", handleHealth)
+func (h *handlers) registerRoutes(r *gin.Engine) {
+	r.GET("/healthz", h.health)
 
 	// Full pages
-	r.GET("/", handleHome)
+	r.GET("/", h.home)
+	r.GET("/coach", h.coachPage)
 
-	// HTMX partials: small HTML fragments swapped into a page.
-	r.GET("/partials/server-time", handleServerTime)
+	// htmx endpoints: they return HTML fragments, not whole pages.
+	r.POST("/coach/chat", h.coachChat)
+	r.GET("/partials/server-time", h.serverTime)
 
-	r.NoRoute(handleNotFound)
+	r.NoRoute(h.notFound)
 }
 
 // render writes a templ component as the HTML response.
