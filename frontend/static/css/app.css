@@ -90,3 +90,77 @@ a { color: var(--accent); }
 .htmx-request.htmx-indicator, .htmx-request .htmx-indicator { display: inline; }
 
 .footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 20px 16px; }
+
+a.btn { display: inline-block; text-decoration: none; }
+.btn:disabled { opacity: 0.6; cursor: wait; }
+.muted { color: var(--muted); }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---- AI Coach chat ---- */
+
+.chat-header {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  margin-bottom: 16px;
+}
+.chat-header h1 { margin: 0 0 4px; font-size: 1.6rem; }
+.chat-header p { margin: 0; }
+
+.badge {
+  font-size: 0.8rem; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  white-space: nowrap;
+}
+
+.messages { display: flex; flex-direction: column; gap: 10px; }
+
+.bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.bubble.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+  border-bottom-right-radius: 4px;
+}
+.bubble.assistant { align-self: flex-start; border-bottom-left-radius: 4px; }
+/* Keep the line breaks of the model's answer (Markdown rendering: step 5). */
+.bubble-text { white-space: pre-wrap; }
+
+.thinking { margin: 10px 0 0; color: var(--muted); }
+/* .htmx-indicator elements are hidden until htmx adds .htmx-request */
+.thinking.htmx-indicator { display: none; }
+.thinking.htmx-request { display: block; }
+.dots::after { content: ""; animation: dots 1.2s steps(4, end) infinite; }
+@keyframes dots {
+  0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; }
+}
+
+.alert {
+  margin-top: 12px; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid #e3a6a6; background: #fdeeee; color: #8a1f1f;
+}
+@media (prefers-color-scheme: dark) {
+  .alert { border-color: #6b2b2b; background: #2a1414; color: #f3b9b9; }
+}
+
+.chat-form {
+  display: flex; gap: 8px; align-items: flex-end;
+  margin-top: 16px;
+}
+.chat-form textarea {
+  flex: 1; resize: vertical; min-height: 48px;
+  font: inherit; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+}
+.chat-form textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hint { font-size: 0.8rem; margin: 6px 2px 0; }

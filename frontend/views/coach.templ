@@ -1,0 +1,91 @@
+package views
+
+// CoachPage is the AI Coach chat page.
+//
+// How the conversation is remembered: every chat bubble carries two hidden
+// inputs (role + content). The form includes them with hx-include, so each new
+// question is sent together with the earlier turns. The page itself is the
+// state - the server stores nothing. (When accounts arrive, chats move to the
+// database.)
+templ CoachPage(model string) {
+	@Layout("AI Coach") {
+		<section class="chat">
+			<header class="chat-header">
+				<div>
+					<h1>AI Coach</h1>
+					<p class="muted">Ask about food, calories, protein or healthy habits.</p>
+				</div>
+				<span class="badge" title="AI model in use">{ model }</span>
+			</header>
+			<div id="messages" class="messages" aria-live="polite">
+				<!-- The welcome bubble has no hidden inputs, so it is not sent to the model. -->
+				<div class="bubble assistant">
+					Hi! I'm your NutriSI coach. What would you like to know about nutrition today?
+				</div>
+			</div>
+			<!-- Shown by htmx while a request runs (see hx-indicator below). -->
+			<div id="thinking" class="bubble assistant thinking htmx-indicator">
+				Coach is thinking<span class="dots"></span>
+			</div>
+			<div id="chat-error"></div>
+			<!--
+				hx-post         send the form to /coach/chat
+				hx-include      also send the hidden inputs inside #messages (the history)
+				hx-target       put the answer into #messages...
+				hx-swap         ...at the end, then scroll the end into view
+				hx-indicator    show #thinking while waiting
+				hx-disabled-elt disable the textarea and button while waiting
+				hx-on::after-request  clear the box only when the answer arrived (status 200)
+			-->
+			<form
+				class="chat-form"
+				hx-post="/coach/chat"
+				hx-include="#messages"
+				hx-target="#messages"
+				hx-swap="beforeend show:bottom"
+				hx-indicator="#thinking"
+				hx-disabled-elt="find textarea, find button"
+				hx-on::after-request="if (event.detail.xhr.status === 200) this.reset()"
+			>
+				<label for="message" class="visually-hidden">Your question</label>
+				<textarea
+					id="message"
+					name="message"
+					rows="2"
+					maxlength="2000"
+					placeholder="e.g. How much protein is in 100 g of lentils?"
+					required
+					hx-on:keydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit() }"
+				></textarea>
+				<button class="btn" type="submit">Send</button>
+			</form>
+			<p class="hint muted">Enter to send · Shift+Enter for a new line · Not medical advice.</p>
+		</section>
+	}
+}
+
+// ChatTurn is returned after a successful answer: the user's question and the
+// coach's reply, each with hidden inputs so they become history next time.
+templ ChatTurn(question, answer string) {
+	@chatBubble("user", question)
+	@chatBubble("assistant", answer)
+	<!--
+		Out-of-band swap: htmx also finds this element and replaces #chat-error
+		with it, which clears any old error message. One response, two updates.
+	-->
+	<div id="chat-error" hx-swap-oob="true"></div>
+}
+
+templ chatBubble(role, text string) {
+	<div class={ "bubble", role }>
+		<input type="hidden" name="role" value={ role }/>
+		<input type="hidden" name="content" value={ text }/>
+		<!-- templ escapes text, so a reply can never inject HTML or scripts. -->
+		<div class="bubble-text">{ text }</div>
+	</div>
+}
+
+// ChatError is shown in #chat-error when something goes wrong.
+templ ChatError(msg string) {
+	<div class="alert" role="alert">{ msg }</div>
+}

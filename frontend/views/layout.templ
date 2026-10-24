@@ -1,5 +1,17 @@
 package views
 
+// htmxConfig changes which responses htmx swaps into the page. By default htmx
+// ignores 4xx/5xx responses. We want our friendly error boxes from 422
+// (invalid input) and 502/503/504 (model problems) to be shown.
+const htmxConfig = `{"responseHandling":[
+	{"code":"204","swap":false},
+	{"code":"[23]..","swap":true},
+	{"code":"422","swap":true,"error":false},
+	{"code":"50[234]","swap":true,"error":false},
+	{"code":"[45]..","swap":false,"error":true},
+	{"code":"...","swap":false}
+]}`
+
 // Layout is the HTML shell shared by every full page. Pages pass their own
 // content as children: @Layout("Title") { ...page content... }
 templ Layout(title string) {
@@ -9,6 +21,7 @@ templ Layout(title string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } · NutriSI</title>
+			<meta name="htmx-config" content={ htmxConfig }/>
 			<link rel="stylesheet" href="/static/css/app.css"/>
 			<!-- htmx is served by our own server, so it also works offline later (PWA). -->
 			<script src="/static/js/htmx.min.js" defer></script>
@@ -18,6 +31,7 @@ templ Layout(title string) {
 				<a href="/" class="brand">Nutri<span>SI</span></a>
 				<nav>
 					<a href="/">Home</a>
+					<a href="/coach">AI Coach</a>
 				</nav>
 			</header>
 			<main class="container">

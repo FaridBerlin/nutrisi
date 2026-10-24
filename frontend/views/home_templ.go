@@ -43,7 +43,7 @@ func HomePage() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"hero\"><h1>Eat well, with a coach in your pocket.</h1><p class=\"lead\">NutriSI answers your nutrition questions, plans meals and tracks your progress. We start with the AI Coach.</p></section><section class=\"card\"><h2>AI Coach</h2><p>Ask anything about food, calories or healthy habits. Coming in the next step.</p></section><section class=\"card\"><h2>htmx check</h2><p>This button asks the Go server for a small piece of HTML and swaps it into the box, with no page reload and no JavaScript of our own.</p><!--\n\t\t\t\thx-get:       which URL to call\n\t\t\t\thx-target:    which element receives the answer\n\t\t\t\thx-swap:      how to insert it (innerHTML = replace the inside)\n\t\t\t\thx-indicator: element shown while the request runs\n\t\t\t--><button class=\"btn\" hx-get=\"/partials/server-time\" hx-target=\"#server-time\" hx-swap=\"innerHTML\" hx-indicator=\"#time-spinner\">Ask the server</button> <span id=\"time-spinner\" class=\"htmx-indicator\">Loading…</span><div id=\"server-time\" class=\"result\">Nothing loaded yet.</div></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"hero\"><h1>Eat well, with a coach in your pocket.</h1><p class=\"lead\">NutriSI answers your nutrition questions, plans meals and tracks your progress. We start with the AI Coach.</p></section><section class=\"card\"><h2>AI Coach</h2><p>Ask anything about food, calories or healthy habits.</p><a class=\"btn\" href=\"/coach\">Open the AI Coach</a></section><section class=\"card\"><h2>htmx check</h2><p>This button asks the Go server for a small piece of HTML and swaps it into the box, with no page reload and no JavaScript of our own.</p><!--\n\t\t\t\thx-get:       which URL to call\n\t\t\t\thx-target:    which element receives the answer\n\t\t\t\thx-swap:      how to insert it (innerHTML = replace the inside)\n\t\t\t\thx-indicator: element shown while the request runs\n\t\t\t--><button class=\"btn\" hx-get=\"/partials/server-time\" hx-target=\"#server-time\" hx-swap=\"innerHTML\" hx-indicator=\"#time-spinner\">Ask the server</button> <span id=\"time-spinner\" class=\"htmx-indicator\">Loading…</span><div id=\"server-time\" class=\"result\">Nothing loaded yet.</div></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -86,7 +86,7 @@ func ServerTime(now string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(now)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/home.templ`, Line: 47, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/home.templ`, Line: 48, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
