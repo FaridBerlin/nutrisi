@@ -4,6 +4,7 @@ package server
 import (
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/a-h/templ"
 	"github.com/gin-gonic/gin"
@@ -16,8 +17,9 @@ import (
 // handlers holds what the HTTP handlers need. Handlers are methods on it, so
 // dependencies are passed in once instead of living in global variables.
 type handlers struct {
-	cfg   config.Config
-	coach *coach.Service
+	cfg     config.Config
+	coach   *coach.Service
+	pending *coach.Pending // questions waiting for their stream
 }
 
 // New returns a ready-to-serve Gin engine.
@@ -44,7 +46,13 @@ func New(cfg config.Config, coachSvc *coach.Service) *gin.Engine {
 	}
 	r.StaticFS("/static", http.FS(static))
 
-	h := &handlers{cfg: cfg, coach: coachSvc}
+	h := &handlers{
+		cfg:   cfg,
+		coach: coachSvc,
+		// A question waits at most 2 minutes for the browser to open its
+		// stream; at most 1000 can wait at once.
+		pending: coach.NewPending(2*time.Minute, 1000),
+	}
 	h.registerRoutes(r)
 	return r
 }
@@ -59,6 +67,7 @@ func (h *handlers) registerRoutes(r *gin.Engine) {
 
 	// htmx endpoints: they return HTML fragments, not whole pages.
 	r.POST("/coach/chat", h.coachChat)
+	r.GET("/coach/stream/:id", h.coachStream) // Server-Sent Events
 	r.GET("/partials/server-time", h.serverTime)
 
 	r.NoRoute(h.notFound)

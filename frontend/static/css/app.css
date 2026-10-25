@@ -136,14 +136,13 @@ a.btn { display: inline-block; text-decoration: none; }
 /* Keep the line breaks of the model's answer (Markdown rendering: step 5). */
 .bubble-text { white-space: pre-wrap; }
 
-.thinking { margin: 10px 0 0; color: var(--muted); }
-/* .htmx-indicator elements are hidden until htmx adds .htmx-request */
-.thinking.htmx-indicator { display: none; }
-.thinking.htmx-request { display: block; }
-.dots::after { content: ""; animation: dots 1.2s steps(4, end) infinite; }
+/* While the streamed answer is still empty, show "Coach is thinking..." */
+.stream:empty::before { content: "Coach is thinking"; color: var(--muted); }
+.stream:empty::after { content: ""; color: var(--muted); animation: dots 1.2s steps(4, end) infinite; }
 @keyframes dots {
   0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; }
 }
+.bubble .alert { margin-top: 8px; }
 
 .alert {
   margin-top: 12px; padding: 10px 14px; border-radius: 10px;
@@ -153,9 +152,10 @@ a.btn { display: inline-block; text-decoration: none; }
   .alert { border-color: #6b2b2b; background: #2a1414; color: #f3b9b9; }
 }
 
-.chat-form {
+.chat-form { margin-top: 16px; }
+.chat-form fieldset {
   display: flex; gap: 8px; align-items: flex-end;
-  margin-top: 16px;
+  border: 0; margin: 0; padding: 0; min-width: 0;
 }
 .chat-form textarea {
   flex: 1; resize: vertical; min-height: 48px;

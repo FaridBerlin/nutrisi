@@ -69,7 +69,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><link rel=\"stylesheet\" href=\"/static/css/app.css\"><!-- htmx is served by our own server, so it also works offline later (PWA). --><script src=\"/static/js/htmx.min.js\" defer></script></head><body><header class=\"topbar\"><a href=\"/\" class=\"brand\">Nutri<span>SI</span></a><nav><a href=\"/\">Home</a> <a href=\"/coach\">AI Coach</a></nav></header><main class=\"container\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><link rel=\"stylesheet\" href=\"/static/css/app.css\"><!-- htmx is served by our own server, so it also works offline later (PWA). --><script src=\"/static/js/htmx.min.js\" defer></script><!-- htmx extension for Server-Sent Events (streaming answers). Must load after htmx. --><script src=\"/static/js/htmx-ext-sse.min.js\" defer></script></head><body><header class=\"topbar\"><a href=\"/\" class=\"brand\">Nutri<span>SI</span></a><nav><a href=\"/\">Home</a> <a href=\"/coach\">AI Coach</a></nav></header><main class=\"container\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

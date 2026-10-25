@@ -23,6 +23,11 @@ type Message struct {
 // Client is what the rest of the app needs from a model. Code depends on this
 // interface, not on the HTTP implementation, so tests can pass a fake.
 type Client interface {
-	// Chat sends the whole conversation and returns the model's reply.
+	// Chat sends the whole conversation and returns the model's full reply.
 	Chat(ctx context.Context, messages []Message) (string, error)
+
+	// ChatStream sends the conversation and calls onDelta with each piece of
+	// text as soon as the model produces it. If onDelta returns an error,
+	// streaming stops and ChatStream returns that error.
+	ChatStream(ctx context.Context, messages []Message, onDelta func(text string) error) error
 }

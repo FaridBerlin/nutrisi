@@ -28,6 +28,20 @@ func (f *fakeLLM) Chat(_ context.Context, msgs []llm.Message) (string, error) {
 	return f.reply, f.err
 }
 
+// ChatStream sends the reply word by word, like a real model would.
+func (f *fakeLLM) ChatStream(_ context.Context, msgs []llm.Message, onDelta func(string) error) error {
+	f.got = msgs
+	if f.err != nil {
+		return f.err
+	}
+	for _, word := range strings.SplitAfter(f.reply, " ") {
+		if err := onDelta(word); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // newTestServer builds the real engine in test mode with a fake model.
 func newTestServer(fake *fakeLLM) *gin.Engine {
 	gin.SetMode(gin.TestMode)
