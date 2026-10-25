@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -65,29 +66,44 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
+// streamChunk is one "data:" line of a streamed answer. The new text is in
+// choices[0].delta.content. Thinking models also send delta.reasoning, which
+// we simply don't decode.
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 type errorResponse struct {
 	Error struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// Chat implements Client.
-func (c *OpenAIClient) Chat(ctx context.Context, messages []Message) (string, error) {
+// post sends a chat request and checks the status code. The caller must
+// close the response body.
+func (c *OpenAIClient) post(ctx context.Context, messages []Message, stream bool) (*http.Response, error) {
 	body, err := json.Marshal(chatRequest{
 		Model:           c.model,
 		Messages:        messages,
-		Stream:          false, // streaming comes in step 3
+		Stream:          stream,
 		ReasoningEffort: c.reasoningEffort,
 	})
 	if err != nil {
-		return "", fmt.Errorf("llm: encode request: %w", err)
+		return nil, fmt.Errorf("llm: encode request: %w", err)
 	}
 
 	// NewRequestWithContext: if ctx is cancelled (e.g. the browser closed the
 	// tab), the HTTP call to the model is cancelled too.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("llm: build request: %w", err)
+		return nil, fmt.Errorf("llm: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
@@ -98,7 +114,24 @@ func (c *OpenAIClient) Chat(ctx context.Context, messages []Message) (string, er
 	if err != nil {
 		// %w wraps both errors, so callers can check errors.Is(err, ErrUnavailable)
 		// and errors.Is(err, context.Canceled).
-		return "", fmt.Errorf("%w: %w", ErrUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		var e errorResponse
+		_ = json.Unmarshal(raw, &e) // best effort; message may stay empty
+		return nil, fmt.Errorf("%w: status %d: %s", ErrUnavailable, resp.StatusCode, e.Error.Message)
+	}
+	return resp, nil
+}
+
+// Chat implements Client: one request, one complete answer.
+func (c *OpenAIClient) Chat(ctx context.Context, messages []Message) (string, error) {
+	resp, err := c.post(ctx, messages, false)
+	if err != nil {
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -106,12 +139,6 @@ func (c *OpenAIClient) Chat(ctx context.Context, messages []Message) (string, er
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", fmt.Errorf("%w: read body: %w", ErrUnavailable, err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		var e errorResponse
-		_ = json.Unmarshal(raw, &e) // best effort; message may stay empty
-		return "", fmt.Errorf("%w: status %d: %s", ErrUnavailable, resp.StatusCode, e.Error.Message)
 	}
 
 	var out chatResponse
@@ -127,6 +154,69 @@ func (c *OpenAIClient) Chat(ctx context.Context, messages []Message) (string, er
 		return "", fmt.Errorf("%w: empty reply", ErrUnavailable)
 	}
 	return reply, nil
+}
+
+// ChatStream implements Client: the answer arrives in small pieces.
+//
+// With "stream": true the server answers with Server-Sent Events, one JSON
+// chunk per line:
+//
+//	data: {"choices":[{"delta":{"content":"Lent"}}]}
+//	data: {"choices":[{"delta":{"content":"ils are"}}]}
+//	data: [DONE]
+func (c *OpenAIClient) ChatStream(ctx context.Context, messages []Message, onDelta func(string) error) error {
+	resp, err := c.post(ctx, messages, true)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64<<10), 1<<20) // allow lines up to 1 MB
+
+	gotText := false
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip empty lines (they separate events) and anything that isn't data.
+		data, ok := strings.CutPrefix(line, "data:")
+		if !ok {
+			continue
+		}
+		data = strings.TrimSpace(data)
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk streamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return fmt.Errorf("%w: decode chunk: %w", ErrUnavailable, err)
+		}
+		if chunk.Error != nil {
+			return fmt.Errorf("%w: %s", ErrUnavailable, chunk.Error.Message)
+		}
+		if len(chunk.Choices) == 0 || chunk.Choices[0].Delta.Content == "" {
+			continue // e.g. a "reasoning" chunk or the role-only first chunk
+		}
+
+		gotText = true
+		if err := onDelta(chunk.Choices[0].Delta.Content); err != nil {
+			return err // the caller wants to stop (e.g. the browser left)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		// A cancelled context shows up here as a read error; return the
+		// context's own error so callers can tell "cancelled" from "broken".
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("%w: read stream: %w", ErrUnavailable, err)
+	}
+	if !gotText {
+		return fmt.Errorf("%w: empty reply", ErrUnavailable)
+	}
+	return nil
 }
 
 // ListModels returns the model names the server offers (GET /v1/models).

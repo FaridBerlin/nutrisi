@@ -22,6 +22,20 @@ func (f *fakeLLM) Chat(_ context.Context, msgs []llm.Message) (string, error) {
 	return f.reply, f.err
 }
 
+// ChatStream sends the reply word by word, like a real model would.
+func (f *fakeLLM) ChatStream(_ context.Context, msgs []llm.Message, onDelta func(string) error) error {
+	f.got = msgs
+	if f.err != nil {
+		return f.err
+	}
+	for _, word := range strings.SplitAfter(f.reply, " ") {
+		if err := onDelta(word); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func TestValidateMessage(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -127,5 +141,35 @@ func TestAskRejectsInvalidMessageWithoutCallingModel(t *testing.T) {
 	}
 	if fake.got != nil {
 		t.Error("model was called for an invalid message")
+	}
+}
+
+func TestStreamReturnsFullAnswer(t *testing.T) {
+	fake := &fakeLLM{reply: "Oats are rich in fibre. "}
+	svc := NewService(fake)
+
+	conv, err := svc.Prepare("Oats?", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pieces []string
+	full, err := svc.Stream(context.Background(), conv, func(s string) error {
+		pieces = append(pieces, s)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pieces) < 2 {
+		t.Errorf("expected several pieces, got %q", pieces)
+	}
+	if full != "Oats are rich in fibre." { // joined and trimmed
+		t.Errorf("full = %q", full)
+	}
+}
+
+func TestPrepareRejectsEmpty(t *testing.T) {
+	if _, err := NewService(&fakeLLM{}).Prepare("  ", nil); !errors.Is(err, ErrEmptyMessage) {
+		t.Errorf("err = %v", err)
 	}
 }

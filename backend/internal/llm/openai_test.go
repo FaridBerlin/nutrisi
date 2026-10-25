@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 )
@@ -113,5 +115,104 @@ func TestListModels(t *testing.T) {
 	}
 	if len(names) != 2 || names[0] != "qwen3.5:0.8b" {
 		t.Errorf("names = %v", names)
+	}
+}
+
+// --- streaming ---------------------------------------------------------------
+
+// sse writes lines the way Ollama does when "stream": true.
+func sse(w http.ResponseWriter, lines ...string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	for _, l := range lines {
+		fmt.Fprintf(w, "data: %s\n\n", l)
+		w.(http.Flusher).Flush()
+	}
+}
+
+func TestChatStreamCollectsDeltas(t *testing.T) {
+	var got chatRequest
+	c := fakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		sse(w,
+			`{"choices":[{"delta":{"role":"assistant","content":""}}]}`, // role-only chunk
+			`{"choices":[{"delta":{"reasoning":"let me think"}}]}`,      // thinking: ignored
+			`{"choices":[{"delta":{"content":"Lent"}}]}`,
+			`{"choices":[{"delta":{"content":"ils are\ngreat."}}]}`,
+			`[DONE]`,
+		)
+	})
+
+	var parts []string
+	err := c.ChatStream(context.Background(), []Message{{Role: RoleUser, Content: "hi"}}, func(s string) error {
+		parts = append(parts, s)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Stream {
+		t.Error(`request did not ask for "stream": true`)
+	}
+	if want := []string{"Lent", "ils are\ngreat."}; !slices.Equal(parts, want) {
+		t.Errorf("parts = %q, want %q", parts, want)
+	}
+}
+
+func TestChatStreamStopsWhenCallbackFails(t *testing.T) {
+	c := fakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sse(w, `{"choices":[{"delta":{"content":"a"}}]}`, `{"choices":[{"delta":{"content":"b"}}]}`, `[DONE]`)
+	})
+	stop := errors.New("browser left")
+	calls := 0
+	err := c.ChatStream(context.Background(), nil, func(string) error {
+		calls++
+		return stop
+	})
+	if !errors.Is(err, stop) || calls != 1 {
+		t.Errorf("err = %v, calls = %d; want our error after 1 call", err, calls)
+	}
+}
+
+func TestChatStreamErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{"http error", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}},
+		{"error inside stream", func(w http.ResponseWriter, r *http.Request) {
+			sse(w, `{"error":{"message":"out of memory"}}`)
+		}},
+		{"no text at all", func(w http.ResponseWriter, r *http.Request) {
+			sse(w, `{"choices":[{"delta":{"reasoning":"hmm"}}]}`, `[DONE]`)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fakeServer(t, tt.handler)
+			err := c.ChatStream(context.Background(), nil, func(string) error { return nil })
+			if !errors.Is(err, ErrUnavailable) {
+				t.Errorf("err = %v, want ErrUnavailable", err)
+			}
+		})
+	}
+}
+
+func TestChatStreamCancelled(t *testing.T) {
+	c := fakeServer(t, func(w http.ResponseWriter, r *http.Request) {
+		sse(w, `{"choices":[{"delta":{"content":"first"}}]}`)
+		select { // then go silent, like a slow model
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	err := c.ChatStream(ctx, nil, func(string) error {
+		cancel() // the user leaves right after the first piece
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }

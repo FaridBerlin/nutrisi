@@ -10,11 +10,20 @@ import templruntime "github.com/a-h/templ/runtime"
 
 // CoachPage is the AI Coach chat page.
 //
-// How the conversation is remembered: every chat bubble carries two hidden
-// inputs (role + content). The form includes them with hx-include, so each new
-// question is sent together with the earlier turns. The page itself is the
-// state - the server stores nothing. (When accounts arrive, chats move to the
-// database.)
+// How the conversation is remembered: every finished chat bubble carries two
+// hidden inputs (role + content). The form includes them with hx-include, so
+// each new question is sent together with the earlier turns. The page itself
+// is the state - the server stores nothing. (When accounts arrive, chats move
+// to the database.)
+//
+// One chat turn has two requests:
+//  1. hx-post /coach/chat      -> the question bubble + an empty coach bubble
+//  2. the coach bubble opens   -> GET /coach/stream/{id} (Server-Sent Events)
+//     and the answer streams in piece by piece.
+//
+// While an answer streams, the form is locked (fieldset disabled). The SSE
+// extension fires htmx:sseClose when the stream ends; hx-on on the section
+// catches that event and unlocks the form.
 func CoachPage(model string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -48,20 +57,20 @@ func CoachPage(model string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"chat\"><header class=\"chat-header\"><div><h1>AI Coach</h1><p class=\"muted\">Ask about food, calories, protein or healthy habits.</p></div><span class=\"badge\" title=\"AI model in use\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"chat\" hx-on:htmx:sse-close=\"htmx.find('#ask').disabled = false; htmx.find('#message').focus()\"><header class=\"chat-header\"><div><h1>AI Coach</h1><p class=\"muted\">Ask about food, calories, protein or healthy habits.</p></div><span class=\"badge\" title=\"AI model in use\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(model)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 18, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 30, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</span></header><div id=\"messages\" class=\"messages\" aria-live=\"polite\"><!-- The welcome bubble has no hidden inputs, so it is not sent to the model. --><div class=\"bubble assistant\">Hi! I'm your NutriSI coach. What would you like to know about nutrition today?</div></div><!-- Shown by htmx while a request runs (see hx-indicator below). --><div id=\"thinking\" class=\"bubble assistant thinking htmx-indicator\">Coach is thinking<span class=\"dots\"></span></div><div id=\"chat-error\"></div><!--\n\t\t\t\thx-post         send the form to /coach/chat\n\t\t\t\thx-include      also send the hidden inputs inside #messages (the history)\n\t\t\t\thx-target       put the answer into #messages...\n\t\t\t\thx-swap         ...at the end, then scroll the end into view\n\t\t\t\thx-indicator    show #thinking while waiting\n\t\t\t\thx-disabled-elt disable the textarea and button while waiting\n\t\t\t\thx-on::after-request  clear the box only when the answer arrived (status 200)\n\t\t\t--><form class=\"chat-form\" hx-post=\"/coach/chat\" hx-include=\"#messages\" hx-target=\"#messages\" hx-swap=\"beforeend show:bottom\" hx-indicator=\"#thinking\" hx-disabled-elt=\"find textarea, find button\" hx-on::after-request=\"if (event.detail.xhr.status === 200) this.reset()\"><label for=\"message\" class=\"visually-hidden\">Your question</label> <textarea id=\"message\" name=\"message\" rows=\"2\" maxlength=\"2000\" placeholder=\"e.g. How much protein is in 100 g of lentils?\" required hx-on:keydown=\"if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit() }\"></textarea> <button class=\"btn\" type=\"submit\">Send</button></form><p class=\"hint muted\">Enter to send · Shift+Enter for a new line · Not medical advice.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</span></header><div id=\"messages\" class=\"messages\" aria-live=\"polite\"><!-- The welcome bubble has no hidden inputs, so it is not sent to the model. --><div class=\"bubble assistant\">Hi! I'm your NutriSI coach. What would you like to know about nutrition today?</div></div><div id=\"chat-error\"></div><!--\n\t\t\t\thx-post         send the form to /coach/chat\n\t\t\t\thx-include      also send the hidden inputs inside #messages (the history)\n\t\t\t\thx-target       put the answer into #messages...\n\t\t\t\thx-swap         ...at the end, then scroll the end into view\n\t\t\t\thx-disabled-elt disable the fieldset while the POST runs\n\t\t\t\thx-on::after-request  on success: clear the box and keep the form\n\t\t\t\t                      locked until the streamed answer is complete\n\t\t\t--><form class=\"chat-form\" hx-post=\"/coach/chat\" hx-include=\"#messages\" hx-target=\"#messages\" hx-swap=\"beforeend show:bottom\" hx-disabled-elt=\"#ask\" hx-on::after-request=\"if (event.detail.xhr.status === 200) { this.reset(); htmx.find('#ask').disabled = true }\"><fieldset id=\"ask\"><label for=\"message\" class=\"visually-hidden\">Your question</label> <textarea id=\"message\" name=\"message\" rows=\"2\" maxlength=\"2000\" placeholder=\"e.g. How much protein is in 100 g of lentils?\" required hx-on:keydown=\"if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit() }\"></textarea> <button class=\"btn\" type=\"submit\">Send</button></fieldset></form><p class=\"hint muted\">Enter to send · Shift+Enter for a new line · Not medical advice.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -75,9 +84,14 @@ func CoachPage(model string) templ.Component {
 	})
 }
 
-// ChatTurn is returned after a successful answer: the user's question and the
-// coach's reply, each with hidden inputs so they become history next time.
-func ChatTurn(question, answer string) templ.Component {
+// ChatTurnStreaming is the answer to the POST: the user's question and an
+// empty coach bubble that fills itself through Server-Sent Events.
+//
+//	hx-ext="sse"     turn on the SSE extension for this element
+//	sse-connect      open an EventSource to this URL
+//	sse-close="done" close the connection when the "done" event arrives
+//	sse-swap="x"     when event "x" arrives, swap its data into this element
+func ChatTurnStreaming(question, streamID string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -102,11 +116,20 @@ func ChatTurn(question, answer string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = chatBubble("assistant", answer).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"bubble assistant\" hx-ext=\"sse\" sse-connect=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<!--\n\t\tOut-of-band swap: htmx also finds this element and replaces #chat-error\n\t\twith it, which clears any old error message. One response, two updates.\n\t--><div id=\"chat-error\" hx-swap-oob=\"true\"></div>")
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue("/coach/stream/" + streamID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 88, Col: 43}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" sse-close=\"done\"><!-- Each \"token\" event is appended here; while empty, CSS shows \"thinking\". --><div class=\"bubble-text stream\" sse-swap=\"token\" hx-swap=\"beforeend\"></div><!-- \"final\" replaces this placeholder with the hidden history inputs. --><div sse-swap=\"final\" hx-swap=\"outerHTML\"></div><!-- \"failed\" puts an error message here. --><div sse-swap=\"failed\" hx-swap=\"innerHTML\"></div></div><!--\n\t\tOut-of-band swap: htmx also finds this element and replaces #chat-error\n\t\twith it, which clears any old error message. One response, two updates.\n\t--><div id=\"chat-error\" hx-swap-oob=\"true\"></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -130,65 +153,47 @@ func chatBubble(role, text string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var5 == nil {
-			templ_7745c5c3_Var5 = templ.NopComponent
+		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var6 == nil {
+			templ_7745c5c3_Var6 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var6 = []any{"bubble", role}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var6...)
+		var templ_7745c5c3_Var7 = []any{"bubble", role}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var7...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var6).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><input type=\"hidden\" name=\"role\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(role)
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var7).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 81, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"> <input type=\"hidden\" name=\"content\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = HistoryInputs(role, text).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<!-- templ escapes text, so a message can never inject HTML or scripts. --><div class=\"bubble-text\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(text)
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 82, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 109, Col: 33}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"><!-- templ escapes text, so a reply can never inject HTML or scripts. --><div class=\"bubble-text\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(text)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 84, Col: 33}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -200,7 +205,64 @@ func chatBubble(role, text string) templ.Component {
 	})
 }
 
-// ChatError is shown in #chat-error when something goes wrong.
+// HistoryInputs are the hidden fields that make a bubble part of the history.
+func HistoryInputs(role, text string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var10 == nil {
+			templ_7745c5c3_Var10 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<input type=\"hidden\" name=\"role\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var11 string
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(role)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 115, Col: 46}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"> <input type=\"hidden\" name=\"content\" value=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(text)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 116, Col: 49}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// ChatError is shown in #chat-error (or inside a coach bubble) when something
+// goes wrong.
 func ChatError(msg string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -217,25 +279,25 @@ func ChatError(msg string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var13 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var13 == nil {
+			templ_7745c5c3_Var13 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"alert\" role=\"alert\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"alert\" role=\"alert\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var12 string
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(msg)
+		var templ_7745c5c3_Var14 string
+		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(msg)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 90, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 122, Col: 38}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

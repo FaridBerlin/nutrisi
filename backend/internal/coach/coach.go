@@ -37,12 +37,19 @@ func NewService(client llm.Client) *Service {
 	return &Service{llm: client}
 }
 
-// Ask validates the question, cleans the history, and asks the model.
+// Conversation is a checked question, ready to send to the model.
+type Conversation struct {
+	Question string        // the trimmed question, as shown in the chat
+	Messages []llm.Message // system prompt + clean history + question
+}
+
+// Prepare validates the question and builds the messages for the model.
 // history holds earlier turns, oldest first, as they came from the browser.
-func (s *Service) Ask(ctx context.Context, question string, history []llm.Message) (string, error) {
+// It does not call the model, so it is fast and can run inside the POST.
+func (s *Service) Prepare(question string, history []llm.Message) (Conversation, error) {
 	question, err := ValidateMessage(question)
 	if err != nil {
-		return "", err
+		return Conversation{}, err
 	}
 
 	// system prompt + earlier turns + the new question
@@ -52,7 +59,29 @@ func (s *Service) Ask(ctx context.Context, question string, history []llm.Messag
 	messages = append(messages, clean...)
 	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: question})
 
-	return s.llm.Chat(ctx, messages)
+	return Conversation{Question: question, Messages: messages}, nil
+}
+
+// Ask returns the complete answer in one go (no streaming). The web page uses
+// Stream; Ask stays for a future JSON API (mobile app) and for simple tests.
+func (s *Service) Ask(ctx context.Context, question string, history []llm.Message) (string, error) {
+	conv, err := s.Prepare(question, history)
+	if err != nil {
+		return "", err
+	}
+	return s.llm.Chat(ctx, conv.Messages)
+}
+
+// Stream sends the conversation to the model and calls onDelta for every new
+// piece of text. It also collects the pieces and returns the whole answer,
+// which the page needs for the chat history.
+func (s *Service) Stream(ctx context.Context, conv Conversation, onDelta func(string) error) (string, error) {
+	var full strings.Builder // efficient way to build a string piece by piece
+	err := s.llm.ChatStream(ctx, conv.Messages, func(text string) error {
+		full.WriteString(text)
+		return onDelta(text)
+	})
+	return strings.TrimSpace(full.String()), err
 }
 
 // ValidateMessage trims the message and checks its length.
