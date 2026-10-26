@@ -25,7 +25,11 @@ templ CoachPage(model string) {
 					<h1>AI Coach</h1>
 					<p class="muted">Ask about food, calories, protein or healthy habits.</p>
 				</div>
-				<span class="badge" title="AI model in use">{ model }</span>
+				<div class="chat-actions">
+					<span class="badge" title="AI model in use">{ model }</span>
+					<!-- The conversation lives in the page, so a new chat is just a fresh page. -->
+					<a class="btn-link" href="/coach">New chat</a>
+				</div>
 			</header>
 			<div id="messages" class="messages" aria-live="polite">
 				<!-- The welcome bubble has no hidden inputs, so it is not sent to the model. -->
@@ -86,8 +90,12 @@ templ ChatTurnStreaming(question, streamID string) {
 		sse-connect={ "/coach/stream/" + streamID }
 		sse-close="done"
 	>
-		<!-- Each "token" event is appended here; while empty, CSS shows "thinking". -->
-		<div class="bubble-text stream" sse-swap="token" hx-swap="beforeend"></div>
+		<!--
+			Each "update" event carries the whole answer so far as safe HTML and
+			replaces the content (innerHTML). While empty, CSS shows "thinking";
+			while streaming, CSS shows a typing cursor.
+		-->
+		<div class="bubble-text markdown stream" sse-swap="update" hx-swap="innerHTML"></div>
 		<!-- "final" replaces this placeholder with the hidden history inputs. -->
 		<div sse-swap="final" hx-swap="outerHTML"></div>
 		<!-- "failed" puts an error message here. -->

@@ -5,21 +5,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 	"github.com/gin-gonic/gin"
 
 	"github.com/FaridBerlin/nutrisi/backend/internal/coach"
 	"github.com/FaridBerlin/nutrisi/backend/internal/llm"
+	"github.com/FaridBerlin/nutrisi/backend/internal/markdown"
 	"github.com/FaridBerlin/nutrisi/frontend/views"
 )
 
 // maxChatBody limits the size of one chat request (question + history).
 const maxChatBody = 512 << 10 // 512 KB
+
+// updateEvery is the shortest time between two "update" events of a streamed
+// answer. 100 ms still feels live, but a 400-piece answer causes ~30 renders
+// instead of 400.
+const updateEvery = 100 * time.Millisecond
 
 // coachPage renders the chat page.
 func (h *handlers) coachPage(c *gin.Context) {
@@ -58,8 +64,10 @@ func (h *handlers) coachChat(c *gin.Context) {
 //
 // Events the page listens for (see ChatTurnStreaming in coach.templ):
 //
-//	token  - a piece of the answer, appended to the bubble
-//	final  - hidden inputs with the whole answer, so it becomes history
+//	update - the whole answer so far, as safe HTML (Markdown rendered);
+//	         replaces the bubble's content each time
+//	final  - hidden inputs with the whole answer (raw Markdown), so it
+//	         becomes history for the next question
 //	failed - an error message shown inside the bubble
 //	done   - always last; tells htmx to close the connection
 //
@@ -81,10 +89,26 @@ func (h *handlers) coachStream(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.cfg.LLMTimeout)
 	defer cancel()
 
-	answer, err := h.coach.Stream(ctx, conv, func(text string) error {
-		// html.EscapeString turns "<" into "&lt;" etc., because htmx inserts
-		// the data as HTML. Model output must never become real HTML tags.
-		return sendEvent(c, "token", html.EscapeString(text))
+	// Why re-render everything instead of sending each new piece?
+	// Markdown only makes sense as a whole: "**" means nothing until the
+	// closing "**" arrives. So we keep the full text, render it, and let htmx
+	// replace the bubble's content. To avoid rendering for every tiny piece,
+	// we send at most one update per updateEvery ("throttling").
+	var (
+		text       strings.Builder // the answer so far (raw Markdown)
+		lastUpdate time.Time       // zero at first, so the first piece is sent at once
+	)
+	sendUpdate := func() error {
+		lastUpdate = time.Now()
+		return sendEvent(c, "update", markdown.Render(text.String()))
+	}
+
+	answer, err := h.coach.Stream(ctx, conv, func(delta string) error {
+		text.WriteString(delta)
+		if time.Since(lastUpdate) < updateEvery {
+			return nil // too soon - the next update will include this piece
+		}
+		return sendUpdate()
 	})
 
 	if err != nil {
@@ -94,17 +118,25 @@ func (h *handlers) coachStream(c *gin.Context) {
 			logger(c).Info("coach: client disconnected during stream")
 			return
 		}
+		if text.Len() > 0 {
+			_ = sendUpdate() // show everything that arrived before the error
+		}
 		h.streamFailed(c, h.userMessage(c, err))
 		return
 	}
 
-	// The answer is complete: add it to the page's history, then close.
+	// Pieces that arrived since the last update haven't been shown yet:
+	// one last, complete render.
+	_ = sendUpdate()
+
 	// Log sizes only - never the question or answer text (personal data).
 	logger(c).Info("coach: answer streamed",
 		"question_chars", len([]rune(conv.Question)),
 		"answer_chars", len([]rune(answer)),
 		"history_turns", len(conv.Messages)-2,
 	)
+	// The history keeps the raw Markdown: that is what the model wrote and
+	// what it should see again in the next turn.
 	_ = sendEvent(c, "final", renderString(ctx, views.HistoryInputs(llm.RoleAssistant, answer)))
 	_ = sendEvent(c, "done", "")
 }
