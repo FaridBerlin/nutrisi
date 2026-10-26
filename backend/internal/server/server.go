@@ -3,7 +3,9 @@ package server
 
 import (
 	"io/fs"
+	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
@@ -23,28 +25,10 @@ type handlers struct {
 }
 
 // New returns a ready-to-serve Gin engine.
-func New(cfg config.Config, coachSvc *coach.Service) *gin.Engine {
+func New(cfg config.Config, coachSvc *coach.Service, log *slog.Logger) *gin.Engine {
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
-
-	// gin.New() starts empty; gin.Default() would add Logger and Recovery for
-	// us. Adding them by hand makes it clear what runs on every request.
-	r := gin.New()
-	r.Use(gin.Logger())   // one log line per request
-	r.Use(gin.Recovery()) // a panic in a handler becomes a 500, not a crash
-
-	// We are not behind a reverse proxy yet, so trust no X-Forwarded-For
-	// headers. (Revisit when deploying behind nginx/Caddy.)
-	_ = r.SetTrustedProxies(nil)
-
-	// Static files (CSS, htmx.min.js, images) are embedded into the binary,
-	// so the server is one file you can copy anywhere.
-	static, err := fs.Sub(frontend.Static, "static")
-	if err != nil {
-		panic(err) // only fails if the embed path is wrong - a programming error
-	}
-	r.StaticFS("/static", http.FS(static))
 
 	h := &handlers{
 		cfg:   cfg,
@@ -53,12 +37,47 @@ func New(cfg config.Config, coachSvc *coach.Service) *gin.Engine {
 		// stream; at most 1000 can wait at once.
 		pending: coach.NewPending(2*time.Minute, 1000),
 	}
-	h.registerRoutes(r)
+
+	// gin.New() starts without any middleware. We add ours in this order:
+	r := gin.New()
+	r.Use(
+		requestID(log),                      // 1. ID + per-request logger
+		requestLogger(),                     // 2. one log line per request (runs "around" the rest)
+		recovery(h.serverError),             // 3. panic -> 500 page, not a crash
+		securityHeaders(cfg.IsProduction()), // 4. CSP and friends on every response
+		rateLimit( //                            5. general limit for everything...
+			newLimiter(cfg.RateLimitGeneralPerMin, time.Minute, cfg.RateLimitGeneralPerMin/2),
+			isStaticOrHealth, // ...except static files and the health check
+			h.tooManyRequests,
+		),
+	)
+
+	// We are not behind a reverse proxy yet, so trust no X-Forwarded-For
+	// headers. (Revisit when deploying behind nginx/Caddy.)
+	_ = r.SetTrustedProxies(nil)
+
+	// Static files (CSS, JS, images) are embedded into the binary, so the
+	// server is one file you can copy anywhere.
+	static, err := fs.Sub(frontend.Static, "static")
+	if err != nil {
+		panic(err) // only fails if the embed path is wrong - a programming error
+	}
+	r.StaticFS("/static", http.FS(static))
+
+	// The AI Coach is expensive (it runs a model), so it gets its own, much
+	// stricter limit: RATE_LIMIT_COACH_PER_HOUR, with bursts of up to 10.
+	coachLimit := rateLimit(
+		newLimiter(cfg.RateLimitCoachPerHour, time.Hour, min(10, cfg.RateLimitCoachPerHour)),
+		nil,
+		h.tooManyRequests,
+	)
+
+	h.registerRoutes(r, coachLimit)
 	return r
 }
 
 // registerRoutes is the one place to see every URL the app answers.
-func (h *handlers) registerRoutes(r *gin.Engine) {
+func (h *handlers) registerRoutes(r *gin.Engine, coachLimit gin.HandlerFunc) {
 	r.GET("/healthz", h.health)
 
 	// Full pages
@@ -66,11 +85,16 @@ func (h *handlers) registerRoutes(r *gin.Engine) {
 	r.GET("/coach", h.coachPage)
 
 	// htmx endpoints: they return HTML fragments, not whole pages.
-	r.POST("/coach/chat", h.coachChat)
-	r.GET("/coach/stream/:id", h.coachStream) // Server-Sent Events
+	// Middleware can also be added per route: coachLimit runs before coachChat.
+	r.POST("/coach/chat", coachLimit, h.coachChat)
+	r.GET("/coach/stream/:id", h.coachStream) // Server-Sent Events (one-time IDs)
 	r.GET("/partials/server-time", h.serverTime)
 
 	r.NoRoute(h.notFound)
+}
+
+func isStaticOrHealth(c *gin.Context) bool {
+	return strings.HasPrefix(c.Request.URL.Path, "/static/") || c.Request.URL.Path == "/healthz"
 }
 
 // render writes a templ component as the HTML response.

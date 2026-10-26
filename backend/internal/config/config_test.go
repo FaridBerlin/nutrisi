@@ -47,3 +47,16 @@ func TestDurationParsing(t *testing.T) {
 		t.Errorf("invalid value should fall back, got %s", got)
 	}
 }
+
+func TestRateLimits(t *testing.T) {
+	unset(t, "RATE_LIMIT_COACH_PER_HOUR")
+	t.Setenv("RATE_LIMIT_GENERAL_PER_MIN", "0") // 0 = off, must be kept
+	c := Load()
+	if c.RateLimitCoachPerHour != 30 || c.RateLimitGeneralPerMin != 0 {
+		t.Errorf("got coach=%d general=%d", c.RateLimitCoachPerHour, c.RateLimitGeneralPerMin)
+	}
+	t.Setenv("RATE_LIMIT_COACH_PER_HOUR", "-5")
+	if got := Load().RateLimitCoachPerHour; got != 30 {
+		t.Errorf("negative value should fall back to 30, got %d", got)
+	}
+}

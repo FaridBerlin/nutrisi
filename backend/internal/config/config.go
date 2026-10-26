@@ -5,8 +5,9 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -26,6 +27,13 @@ type Config struct {
 	LLMAPIKey          string        // empty for local Ollama
 	LLMReasoningEffort string        // "none" = no thinking (faster); "" = model default
 	LLMTimeout         time.Duration // max time for one answer
+
+	// Logging
+	LogLevel string // debug | info | warn | error
+
+	// Rate limits per client IP. 0 turns a limit off.
+	RateLimitCoachPerHour  int // questions to the AI Coach per hour
+	RateLimitGeneralPerMin int // all other requests per minute
 }
 
 // Load reads .env (if it exists) and then the environment.
@@ -43,6 +51,11 @@ func Load() Config {
 		LLMAPIKey:          getEnv("LLM_API_KEY", ""),
 		LLMReasoningEffort: getEnvAllowEmpty("LLM_REASONING_EFFORT", "none"),
 		LLMTimeout:         getDuration("LLM_TIMEOUT", 3*time.Minute),
+
+		LogLevel: getEnv("LOG_LEVEL", "info"),
+
+		RateLimitCoachPerHour:  getInt("RATE_LIMIT_COACH_PER_HOUR", 30), // same as NutriVa
+		RateLimitGeneralPerMin: getInt("RATE_LIMIT_GENERAL_PER_MIN", 120),
 	}
 }
 
@@ -77,8 +90,23 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil || d <= 0 {
-		log.Printf("config: invalid %s=%q, using %s", key, v, fallback)
+		slog.Warn("config: invalid duration, using default", "key", key, "value", v, "default", fallback)
 		return fallback
 	}
 	return d
+}
+
+// getInt parses a whole number >= 0. An invalid value logs a warning and uses
+// the fallback.
+func getInt(key string, fallback int) int {
+	v := getEnv(key, "")
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		slog.Warn("config: invalid number, using default", "key", key, "value", v, "default", fallback)
+		return fallback
+	}
+	return n
 }

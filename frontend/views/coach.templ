@@ -14,14 +14,12 @@ package views
 //     and the answer streams in piece by piece.
 //
 // While an answer streams, the form is locked (fieldset disabled). The SSE
-// extension fires htmx:sseClose when the stream ends; hx-on on the section
-// catches that event and unlocks the form.
+// extension fires htmx:sseClose when the stream ends, and /static/js/app.js
+// unlocks the form. (That code used to be in hx-on attributes; it moved to a
+// file so the Content-Security-Policy can forbid inline scripts.)
 templ CoachPage(model string) {
 	@Layout("AI Coach") {
-		<section
-			class="chat"
-			hx-on:htmx:sse-close="htmx.find('#ask').disabled = false; htmx.find('#message').focus()"
-		>
+		<section class="chat">
 			<header class="chat-header">
 				<div>
 					<h1>AI Coach</h1>
@@ -42,17 +40,17 @@ templ CoachPage(model string) {
 				hx-target       put the answer into #messages...
 				hx-swap         ...at the end, then scroll the end into view
 				hx-disabled-elt disable the fieldset while the POST runs
-				hx-on::after-request  on success: clear the box and keep the form
-				                      locked until the streamed answer is complete
+				After a successful POST, app.js clears the box and keeps the form
+				locked until the streamed answer is complete.
 			-->
 			<form
+				id="chat-form"
 				class="chat-form"
 				hx-post="/coach/chat"
 				hx-include="#messages"
 				hx-target="#messages"
 				hx-swap="beforeend show:bottom"
 				hx-disabled-elt="#ask"
-				hx-on::after-request="if (event.detail.xhr.status === 200) { this.reset(); htmx.find('#ask').disabled = true }"
 			>
 				<fieldset id="ask">
 					<label for="message" class="visually-hidden">Your question</label>
@@ -63,7 +61,7 @@ templ CoachPage(model string) {
 						maxlength="2000"
 						placeholder="e.g. How much protein is in 100 g of lentils?"
 						required
-						hx-on:keydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit() }"
+						data-submit-on-enter
 					></textarea>
 					<button class="btn" type="submit">Send</button>
 				</fieldset>

@@ -22,8 +22,9 @@ import templruntime "github.com/a-h/templ/runtime"
 //     and the answer streams in piece by piece.
 //
 // While an answer streams, the form is locked (fieldset disabled). The SSE
-// extension fires htmx:sseClose when the stream ends; hx-on on the section
-// catches that event and unlocks the form.
+// extension fires htmx:sseClose when the stream ends, and /static/js/app.js
+// unlocks the form. (That code used to be in hx-on attributes; it moved to a
+// file so the Content-Security-Policy can forbid inline scripts.)
 func CoachPage(model string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -57,20 +58,20 @@ func CoachPage(model string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"chat\" hx-on:htmx:sse-close=\"htmx.find('#ask').disabled = false; htmx.find('#message').focus()\"><header class=\"chat-header\"><div><h1>AI Coach</h1><p class=\"muted\">Ask about food, calories, protein or healthy habits.</p></div><span class=\"badge\" title=\"AI model in use\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<section class=\"chat\"><header class=\"chat-header\"><div><h1>AI Coach</h1><p class=\"muted\">Ask about food, calories, protein or healthy habits.</p></div><span class=\"badge\" title=\"AI model in use\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(model)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 30, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 28, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</span></header><div id=\"messages\" class=\"messages\" aria-live=\"polite\"><!-- The welcome bubble has no hidden inputs, so it is not sent to the model. --><div class=\"bubble assistant\">Hi! I'm your NutriSI coach. What would you like to know about nutrition today?</div></div><div id=\"chat-error\"></div><!--\n\t\t\t\thx-post         send the form to /coach/chat\n\t\t\t\thx-include      also send the hidden inputs inside #messages (the history)\n\t\t\t\thx-target       put the answer into #messages...\n\t\t\t\thx-swap         ...at the end, then scroll the end into view\n\t\t\t\thx-disabled-elt disable the fieldset while the POST runs\n\t\t\t\thx-on::after-request  on success: clear the box and keep the form\n\t\t\t\t                      locked until the streamed answer is complete\n\t\t\t--><form class=\"chat-form\" hx-post=\"/coach/chat\" hx-include=\"#messages\" hx-target=\"#messages\" hx-swap=\"beforeend show:bottom\" hx-disabled-elt=\"#ask\" hx-on::after-request=\"if (event.detail.xhr.status === 200) { this.reset(); htmx.find('#ask').disabled = true }\"><fieldset id=\"ask\"><label for=\"message\" class=\"visually-hidden\">Your question</label> <textarea id=\"message\" name=\"message\" rows=\"2\" maxlength=\"2000\" placeholder=\"e.g. How much protein is in 100 g of lentils?\" required hx-on:keydown=\"if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit() }\"></textarea> <button class=\"btn\" type=\"submit\">Send</button></fieldset></form><p class=\"hint muted\">Enter to send · Shift+Enter for a new line · Not medical advice.</p></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</span></header><div id=\"messages\" class=\"messages\" aria-live=\"polite\"><!-- The welcome bubble has no hidden inputs, so it is not sent to the model. --><div class=\"bubble assistant\">Hi! I'm your NutriSI coach. What would you like to know about nutrition today?</div></div><div id=\"chat-error\"></div><!--\n\t\t\t\thx-post         send the form to /coach/chat\n\t\t\t\thx-include      also send the hidden inputs inside #messages (the history)\n\t\t\t\thx-target       put the answer into #messages...\n\t\t\t\thx-swap         ...at the end, then scroll the end into view\n\t\t\t\thx-disabled-elt disable the fieldset while the POST runs\n\t\t\t\tAfter a successful POST, app.js clears the box and keeps the form\n\t\t\t\tlocked until the streamed answer is complete.\n\t\t\t--><form id=\"chat-form\" class=\"chat-form\" hx-post=\"/coach/chat\" hx-include=\"#messages\" hx-target=\"#messages\" hx-swap=\"beforeend show:bottom\" hx-disabled-elt=\"#ask\"><fieldset id=\"ask\"><label for=\"message\" class=\"visually-hidden\">Your question</label> <textarea id=\"message\" name=\"message\" rows=\"2\" maxlength=\"2000\" placeholder=\"e.g. How much protein is in 100 g of lentils?\" required data-submit-on-enter></textarea> <button class=\"btn\" type=\"submit\">Send</button></fieldset></form><p class=\"hint muted\">Enter to send · Shift+Enter for a new line · Not medical advice.</p></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -123,7 +124,7 @@ func ChatTurnStreaming(question, streamID string) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue("/coach/stream/" + streamID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 88, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 86, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -191,7 +192,7 @@ func chatBubble(role, text string) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 109, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 107, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -234,7 +235,7 @@ func HistoryInputs(role, text string) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(role)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 115, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 113, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 		if templ_7745c5c3_Err != nil {
@@ -247,7 +248,7 @@ func HistoryInputs(role, text string) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 116, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 114, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 		if templ_7745c5c3_Err != nil {
@@ -291,7 +292,7 @@ func ChatError(msg string) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(msg)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 122, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `frontend/views/coach.templ`, Line: 120, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {

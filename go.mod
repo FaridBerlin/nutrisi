@@ -6,6 +6,7 @@ require (
 	github.com/a-h/templ v0.3.1070
 	github.com/gin-gonic/gin v1.12.0
 	github.com/joho/godotenv v1.5.1
+	golang.org/x/time v0.16.0
 )
 
 require (
