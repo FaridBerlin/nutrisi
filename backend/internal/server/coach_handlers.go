@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -91,14 +91,20 @@ func (h *handlers) coachStream(c *gin.Context) {
 		if c.Request.Context().Err() != nil {
 			// The browser left (tab closed, page reloaded). The model call
 			// was cancelled through ctx; there is nobody to write to.
-			log.Printf("coach: client disconnected during stream")
+			logger(c).Info("coach: client disconnected during stream")
 			return
 		}
-		h.streamFailed(c, h.userMessage(err))
+		h.streamFailed(c, h.userMessage(c, err))
 		return
 	}
 
 	// The answer is complete: add it to the page's history, then close.
+	// Log sizes only - never the question or answer text (personal data).
+	logger(c).Info("coach: answer streamed",
+		"question_chars", len([]rune(conv.Question)),
+		"answer_chars", len([]rune(answer)),
+		"history_turns", len(conv.Messages)-2,
+	)
 	_ = sendEvent(c, "final", renderString(ctx, views.HistoryInputs(llm.RoleAssistant, answer)))
 	_ = sendEvent(c, "done", "")
 }
@@ -153,25 +159,26 @@ func (h *handlers) chatError(c *gin.Context, err error) {
 	}
 	c.Header("HX-Retarget", "#chat-error") // put the response into the error box...
 	c.Header("HX-Reswap", "innerHTML")     // ...replacing what is inside it
-	render(c, status, views.ChatError(h.userMessage(err)))
+	render(c, status, views.ChatError(h.userMessage(c, err)))
 }
 
 // userMessage turns an error into text for the user. The real error is only
 // logged, never shown: it may contain internal details.
-func (h *handlers) userMessage(err error) string {
+func (h *handlers) userMessage(c *gin.Context, err error) string {
+	log := logger(c)
 	switch {
 	case errors.Is(err, coach.ErrEmptyMessage):
 		return "Please type a question first."
 	case errors.Is(err, coach.ErrMessageTooLong):
 		return fmt.Sprintf("Your message is too long. Please keep it under %d characters.", coach.MaxMessageLength)
 	case errors.Is(err, coach.ErrTooManyPending):
-		log.Printf("coach: %v", err)
+		log.Warn("coach: pending store full", "error", err)
 		return "The coach is very busy right now. Please try again in a minute."
 	case errors.Is(err, context.DeadlineExceeded):
-		log.Printf("coach: timeout after %s: %v", h.cfg.LLMTimeout, err)
+		log.Warn("coach: model timeout", "timeout", h.cfg.LLMTimeout, "error", err)
 		return "The coach took too long to answer. Please try a shorter question."
 	default: // llm.ErrUnavailable and anything unexpected
-		log.Printf("coach: model error: %v", err)
+		log.Error("coach: model error", "error", err)
 		msg := "The coach can't reach its AI model right now. Please try again in a moment."
 		if !h.cfg.IsProduction() {
 			msg += fmt.Sprintf(" (Dev hint: is Ollama running at %s with model %q?)", h.cfg.LLMBaseURL, h.cfg.LLMModel)
@@ -184,7 +191,7 @@ func (h *handlers) userMessage(err error) string {
 func renderString(ctx context.Context, component templ.Component) string {
 	var buf bytes.Buffer
 	if err := component.Render(ctx, &buf); err != nil {
-		log.Printf("render: %v", err)
+		slog.Error("render failed", "error", err)
 	}
 	return buf.String()
 }

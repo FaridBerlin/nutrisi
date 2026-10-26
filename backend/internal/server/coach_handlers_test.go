@@ -4,10 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/FaridBerlin/nutrisi/backend/internal/llm"
 )
@@ -176,7 +179,8 @@ func TestCoachChatValidationErrors(t *testing.T) {
 
 func TestUserMessageHidesInternalErrors(t *testing.T) {
 	h := &handlers{}
-	msg := h.userMessage(errors.New("secret internal detail"))
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	msg := h.userMessage(c, errors.New("secret internal detail"))
 	if strings.Contains(msg, "secret") {
 		t.Errorf("internal error leaked to the user: %q", msg)
 	}

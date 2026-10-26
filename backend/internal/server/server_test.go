@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -42,11 +44,22 @@ func (f *fakeLLM) ChatStream(_ context.Context, msgs []llm.Message, onDelta func
 	return nil
 }
 
+// testConfig has rate limits off (0), so ordinary tests are never limited.
+func testConfig() config.Config {
+	return config.Config{Port: "0", AppEnv: "test", LLMModel: "fake-model", LLMTimeout: time.Second}
+}
+
+// quietLogger throws log lines away, so test output stays readable.
+var quietLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
 // newTestServer builds the real engine in test mode with a fake model.
 func newTestServer(fake *fakeLLM) *gin.Engine {
+	return newTestServerWith(testConfig(), fake)
+}
+
+func newTestServerWith(cfg config.Config, fake *fakeLLM) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	cfg := config.Config{Port: "0", AppEnv: "test", LLMModel: "fake-model", LLMTimeout: time.Second}
-	return New(cfg, coach.NewService(fake))
+	return New(cfg, coach.NewService(fake), quietLogger)
 }
 
 // get sends a GET request straight to the engine - no network needed.

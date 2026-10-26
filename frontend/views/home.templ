@@ -57,3 +57,14 @@ templ NotFoundPage() {
 		</section>
 	}
 }
+
+// ErrorPage is a full page for errors like 429 (too many requests) or 500.
+templ ErrorPage(title, msg string) {
+	@Layout(title) {
+		<section class="card">
+			<h1>{ title }</h1>
+			<p>{ msg }</p>
+			<p><a href="/">Back to the home page</a></p>
+		</section>
+	}
+}

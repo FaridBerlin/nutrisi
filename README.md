@@ -57,7 +57,8 @@ nutrisi/
 │       ├── config/             settings from environment variables / .env
 │       ├── llm/                OpenAI-compatible client (Ollama, llama.cpp)
 │       ├── coach/              AI Coach: input rules, history cleaning, system prompt
-│       └── server/             Gin engine, routes, HTTP handlers
+│       ├── ratelimit/          per-client token buckets (golang.org/x/time/rate)
+│       └── server/             Gin engine, middleware, routes, HTTP handlers
 └── frontend/
     ├── frontend.go             embeds ./static into the Go binary
     ├── views/                  templ components (*.templ → *_templ.go)
@@ -84,7 +85,7 @@ views in `frontend/` receive plain data and never import backend internals.
 1. ✅ Skeleton: Gin, templ, htmx, config, graceful shutdown, tests
 2. ✅ AI Coach chat with a local Ollama model
 3. ✅ Streaming answers over SSE, cancelled when the browser closes
-4. Middleware: rate limiting, structured logging (slog), security headers
+4. ✅ Middleware: rate limiting, structured logging (slog), security headers
 5. Chat UI polish: Markdown rendering, history, error states
 6. Docker, then PWA (manifest + service worker) → Google Play via a Trusted Web Activity
 7. Later: accounts, profile, meal plans, trackers, dashboard, llama.cpp support
@@ -119,6 +120,30 @@ is cancelled and the model stops generating.
 
 Errors in the POST (empty or too long question) come back as 422 with
 `HX-Retarget: #chat-error`; the `htmx-config` meta tag tells htmx to show them.
+
+## Security and logging
+
+Every request passes through this middleware, in order (see `server.New`):
+
+1. **Request ID**: a random ID in the `X-Request-ID` header and on every log line of that request.
+2. **Request log**: one structured `slog` line per request (method, path,
+   status, duration, IP). Text in development, JSON in production. Questions
+   and answers are **never** logged, only their length (GDPR).
+3. **Recovery**: a panic becomes a 500 page and an error log with the stack trace.
+4. **Security headers**: a strict `Content-Security-Policy` (only our own
+   scripts and styles: no inline code, no `eval`), `X-Content-Type-Options`,
+   `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and HSTS in production.
+   htmx runs with `allowEval: false`, so page behaviour lives in
+   `frontend/static/js/app.js` instead of `hx-on` attributes.
+5. **Rate limits** per client IP (token buckets):
+   - AI Coach (`POST /coach/chat`): `RATE_LIMIT_COACH_PER_HOUR` (default 30, bursts of 10)
+   - everything else: `RATE_LIMIT_GENERAL_PER_MIN` (default 120); static files and `/healthz` are exempt
+
+   A limited request gets `429` with a `Retry-After` header. In the chat, the
+   message appears in the error box. Set a limit to `0` to turn it off.
+
+Behind a reverse proxy (later), `SetTrustedProxies` must list the proxy;
+otherwise all users would share the proxy's IP address and one rate limit.
 
 ## Disclaimer
 

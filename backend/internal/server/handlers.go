@@ -1,7 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,4 +32,39 @@ func (h *handlers) serverTime(c *gin.Context) {
 // notFound renders a friendly 404 page for unknown URLs.
 func (h *handlers) notFound(c *gin.Context) {
 	render(c, http.StatusNotFound, views.NotFoundPage())
+}
+
+// tooManyRequests answers a rate-limited request with status 429.
+// For htmx requests it fills the chat's error box; otherwise a full page.
+func (h *handlers) tooManyRequests(c *gin.Context) {
+	msg := "You're sending requests very quickly. Please wait " +
+		waitText(c.Writer.Header().Get("Retry-After")) + " and try again."
+	if isHTMX(c) {
+		c.Header("HX-Retarget", "#chat-error")
+		c.Header("HX-Reswap", "innerHTML")
+		render(c, http.StatusTooManyRequests, views.ChatError(msg))
+		return
+	}
+	render(c, http.StatusTooManyRequests, views.ErrorPage("Slow down a little", msg))
+}
+
+// serverError renders the 500 page (used after a panic).
+func (h *handlers) serverError(c *gin.Context) {
+	render(c, http.StatusInternalServerError,
+		views.ErrorPage("Something went wrong", "Sorry, that didn't work. Please try again in a moment."))
+}
+
+// waitText turns a Retry-After value in seconds into friendly words.
+func waitText(retryAfter string) string {
+	secs, err := strconv.Atoi(retryAfter)
+	switch {
+	case err != nil || secs <= 0:
+		return "a moment"
+	case secs < 60:
+		return "a few seconds"
+	case secs < 120:
+		return "about a minute"
+	default:
+		return fmt.Sprintf("about %d minutes", (secs+59)/60) // round up
+	}
 }
