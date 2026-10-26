@@ -44,7 +44,7 @@ func TestCoachChatReturnsStreamingBubble(t *testing.T) {
 		"Protein in lentils?",              // the user's bubble (trimmed)
 		`name="role" value="user"`,         // its hidden history inputs
 		`hx-ext="sse"`, `sse-close="done"`, // the streaming coach bubble
-		`sse-swap="token"`, `sse-swap="final"`, // its event targets
+		`sse-swap="update"`, `sse-swap="final"`, // its event targets
 		`hx-swap-oob="true"`, // clears old errors
 	} {
 		if !strings.Contains(body, want) {
@@ -57,7 +57,7 @@ func TestCoachChatReturnsStreamingBubble(t *testing.T) {
 }
 
 func TestCoachStreamSendsAnswer(t *testing.T) {
-	fake := &fakeLLM{reply: "Lentils have about 9 g of protein per 100 g."}
+	fake := &fakeLLM{reply: "**Lentils** have about 9 g of protein per 100 g."}
 	r := newTestServer(fake)
 
 	path := ask(t, r, url.Values{
@@ -73,10 +73,11 @@ func TestCoachStreamSendsAnswer(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		"event: token\ndata: Lentils \n\n",                     // first piece
-		"event: final\n",                                       // history inputs...
-		`value="Lentils have about 9 g of protein per 100 g."`, // ...with the full answer
-		"event: done\ndata: \n\n",                              // always last
+		"event: update\ndata: <p><strong>Lentils</strong></p>",          // first piece, already rendered
+		"<strong>Lentils</strong> have about 9 g of protein per 100 g.", // full render at the end
+		"event: final\n", // history inputs...
+		`value="**Lentils** have about 9 g of protein per 100 g."`, // ...keep the raw Markdown
+		"event: done\ndata: \n\n",                                  // always last
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("stream does not contain %q\n--- stream:\n%s", want, body)
@@ -104,24 +105,45 @@ func TestCoachStreamSendsAnswer(t *testing.T) {
 	}
 }
 
-func TestCoachStreamEscapesHTML(t *testing.T) {
-	r := newTestServer(&fakeLLM{reply: "<script>alert(1)</script>"})
+func TestCoachStreamNeverSendsDangerousHTML(t *testing.T) {
+	r := newTestServer(&fakeLLM{reply: `Hi <script>alert(1)</script> [x](javascript:alert(1)) <img src=x onerror=alert(1)>`})
 	body := get(t, r, ask(t, r, url.Values{"message": {"hi"}})).Body.String()
 
-	if strings.Contains(body, "<script>") {
-		t.Errorf("model output was not escaped:\n%s", body)
-	}
-	if !strings.Contains(body, "&lt;script&gt;") {
-		t.Error("expected escaped text")
+	// Only look at the rendered "update" events; the "final" event holds the
+	// raw text in an attribute value, where templ escapes it.
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "data: <p>") {
+			continue
+		}
+		for _, bad := range []string{"<script", "javascript:", "onerror", "<img"} {
+			if strings.Contains(line, bad) {
+				t.Errorf("update contains %q: %s", bad, line)
+			}
+		}
 	}
 }
 
-func TestCoachStreamMultiLineToken(t *testing.T) {
-	// One token with a line break must become two "data:" lines.
-	r := newTestServer(&fakeLLM{reply: "line1\nline2"})
+func TestCoachStreamMultiLineUpdate(t *testing.T) {
+	// Rendered HTML has line breaks; each line needs its own "data:" line.
+	r := newTestServer(&fakeLLM{reply: "- one\n- two"})
 	body := get(t, r, ask(t, r, url.Values{"message": {"hi"}})).Body.String()
-	if !strings.Contains(body, "event: token\ndata: line1\ndata: line2\n\n") {
+	if !strings.Contains(body, "data: <ul>\ndata: <li>one</li>\ndata: <li>two</li>\ndata: </ul>") {
 		t.Errorf("got:\n%s", body)
+	}
+}
+
+func TestCoachStreamThrottlesUpdates(t *testing.T) {
+	// The fake model sends 200 words instantly - far faster than updateEvery.
+	reply := strings.Repeat("word ", 200)
+	r := newTestServer(&fakeLLM{reply: reply})
+	body := get(t, r, ask(t, r, url.Values{"message": {"hi"}})).Body.String()
+
+	updates := strings.Count(body, "event: update")
+	if updates > 3 {
+		t.Errorf("sent %d updates for 200 instant pieces; throttling should keep it to ~2", updates)
+	}
+	if !strings.Contains(body, strings.TrimSpace(reply)+"</p>") {
+		t.Error("the last update must contain the complete answer")
 	}
 }
 
@@ -180,6 +202,7 @@ func TestCoachChatValidationErrors(t *testing.T) {
 func TestUserMessageHidesInternalErrors(t *testing.T) {
 	h := &handlers{}
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set(loggerKey, quietLogger) // keep the test output clean
 	msg := h.userMessage(c, errors.New("secret internal detail"))
 	if strings.Contains(msg, "secret") {
 		t.Errorf("internal error leaked to the user: %q", msg)

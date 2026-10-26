@@ -56,6 +56,7 @@ nutrisi/
 │   └── internal/
 │       ├── config/             settings from environment variables / .env
 │       ├── llm/                OpenAI-compatible client (Ollama, llama.cpp)
+│       ├── markdown/           Markdown -> safe HTML (goldmark + bluemonday)
 │       ├── coach/              AI Coach: input rules, history cleaning, system prompt
 │       ├── ratelimit/          per-client token buckets (golang.org/x/time/rate)
 │       └── server/             Gin engine, middleware, routes, HTTP handlers
@@ -86,7 +87,7 @@ views in `frontend/` receive plain data and never import backend internals.
 2. ✅ AI Coach chat with a local Ollama model
 3. ✅ Streaming answers over SSE, cancelled when the browser closes
 4. ✅ Middleware: rate limiting, structured logging (slog), security headers
-5. Chat UI polish: Markdown rendering, history, error states
+5. ✅ Markdown answers (tables, lists, bold), rendered safely while streaming
 6. Docker, then PWA (manifest + service worker) → Google Play via a Trusted Web Activity
 7. Later: accounts, profile, meal plans, trackers, dashboard, llama.cpp support
 
@@ -106,8 +107,8 @@ One chat turn is two requests:
 
    | Event    | Meaning                                       | Swapped into           |
    | -------- | --------------------------------------------- | ---------------------- |
-   | `token`  | next piece of text (HTML-escaped)             | the bubble (`beforeend`) |
-   | `final`  | hidden inputs with the whole answer (history) | placeholder (`outerHTML`) |
+   | `update` | whole answer so far as safe HTML (Markdown rendered), at most every 100 ms | the bubble (`innerHTML`) |
+   | `final`  | hidden inputs with the whole answer as raw Markdown (history) | placeholder (`outerHTML`) |
    | `failed` | error message                                 | the bubble             |
    | `done`   | always last; closes the connection            | –                      |
 
@@ -120,6 +121,22 @@ is cancelled and the model stops generating.
 
 Errors in the POST (empty or too long question) come back as 422 with
 `HX-Retarget: #chat-error`; the `htmx-config` meta tag tells htmx to show them.
+
+## Markdown answers
+
+The model answers in Markdown. `markdown.Render` turns it into HTML in two steps:
+
+1. **goldmark** converts Markdown to HTML (tables, lists, bold, task lists,
+   strikethrough, links). Raw HTML inside the Markdown is dropped.
+2. **bluemonday** keeps only an explicit allow-list of tags and attributes:
+   no `<script>`, no `<img>`, no `on...=` handlers, no `javascript:` links,
+   and no `<input>` except disabled checkboxes, so an answer can never add
+   fake hidden history fields.
+
+While streaming, the server re-renders the whole answer and sends it as one
+`update` event, at most every 100 ms (throttling). Markdown only makes sense as
+a whole: `**` means nothing until the closing `**` arrives. The chat history
+keeps the raw Markdown, which is what the model should see again.
 
 ## Security and logging
 
